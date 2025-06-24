@@ -1,22 +1,30 @@
 import streamlit as st
 import PyPDF2
-import tempfile
-from io import StringIO
+import gzip
+from io import BytesIO
 
-def extract_text_from_pdf(file):
+def extract_structured_text(file, filename):
     pdf_reader = PyPDF2.PdfReader(file)
-    text = ""
-    for page in pdf_reader.pages:
-        text += page.extract_text() or ""
-    return text
+    structured_text = [f"\n===== File: {filename} =====\n"]
+    for i, page in enumerate(pdf_reader.pages, 1):
+        text = page.extract_text() or ""
+        structured_text.append(f"\n--- Page {i} ---\n{text.strip()}\n")
+    return "".join(structured_text)
+
+def compress_text(text):
+    buffer = BytesIO()
+    with gzip.GzipFile(fileobj=buffer, mode='wb') as gz_file:
+        gz_file.write(text.encode('utf-8'))
+    buffer.seek(0)
+    return buffer
 
 def main():
-    st.title("PDF Merger & Text Extractor")
+    st.title("PDF to Structured Text (with Compression)")
 
     st.write(
         """
-        Upload multiple PDF files and this app will extract all the text, 
-        preserving the order, and allow you to download a single structured text file.
+        Upload multiple PDFs. The app will extract structured text while preserving file and page boundaries, 
+        and you can download the result as a compressed text file (.txt.gz) for easy sharing and storage.
         """
     )
 
@@ -27,25 +35,26 @@ def main():
     )
 
     if uploaded_files:
-        pdf_texts = []
-        for idx, uploaded_file in enumerate(uploaded_files, 1):
-            with st.spinner(f"Extracting PDF {idx}: {uploaded_file.name}"):
-                pdf_text = extract_text_from_pdf(uploaded_file)
-                # Add basic structure: filename and separator
-                structured_text = f"\n---\nFile: {uploaded_file.name}\n---\n{pdf_text.strip()}\n"
-                pdf_texts.append(structured_text)
-
-        final_text = "\n".join(pdf_texts)
+        all_structured_text = []
+        for uploaded_file in uploaded_files:
+            with st.spinner(f"Extracting: {uploaded_file.name}"):
+                structured = extract_structured_text(uploaded_file, uploaded_file.name)
+                all_structured_text.append(structured)
+        complete_text = "\n".join(all_structured_text)
         
-        st.subheader("Preview of Extracted Text")
-        st.text_area("Combined Text", final_text[:5000], height=200)
+        st.subheader("Preview of Structured Text")
+        st.text_area(
+            "Preview (first 5000 characters)", 
+            complete_text[:5000], 
+            height=250
+        )
 
-        # Download the combined text file
+        compressed_buffer = compress_text(complete_text)
         st.download_button(
-            "Download Structured Text File",
-            data=final_text,
-            file_name="combined_pdfs.txt",
-            mime="text/plain"
+            "Download Compressed Structured Text (.txt.gz)",
+            data=compressed_buffer,
+            file_name="combined_pdfs_structured.txt.gz",
+            mime="application/gzip"
         )
 
 if __name__ == "__main__":
